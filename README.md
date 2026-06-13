@@ -2,9 +2,9 @@
 
 PoC en Java 25 que demuestra uso de Reactor Core sin WebFlux para un escenario recomendado: procesamiento asíncrono/batch de pagos pendientes. No expone endpoints REST; funciona como worker reactivo que lee pagos desde PostgreSQL mediante R2DBC, procesa reglas de autorización, controla concurrencia, usa backpressure, reintentos y persiste eventos de dominio.
 
-## ¿Vale la pena Reactor sin WebFlux?
+## Casos de uso de reactor sin webflux
 
-Sí, cuando el problema no es exponer HTTP reactivo sino construir pipelines no bloqueantes: jobs batch, workers, consumo de eventos, ETL ligero, conciliaciones, procesamiento de pagos, integración con colas o flujos internos. Para APIs HTTP, WebFlux sería la capa web natural; para workers, Reactor puede usarse directamente.
+Cuando el problema no es exponer HTTP reactivo sino construir pipelines no bloqueantes: jobs batch, workers, consumo de eventos, ETL ligero, conciliaciones, procesamiento de pagos, integración con colas o flujos internos. Para APIs HTTP, WebFlux sería la capa web natural; para workers, Reactor puede usarse directamente.
 
 ## Stack
 
@@ -156,13 +156,3 @@ docker exec -it reactor-only-payment-postgres psql -U payments -d paymentsdb -c 
 - `delayElement` para simular integración externa no bloqueante.
 - Programación funcional con transformaciones encadenadas.
 - Persistencia reactiva con R2DBC.
-
-## Importar en IntelliJ IDEA
-
-1. Descomprime el ZIP.
-2. Abre IntelliJ IDEA.
-3. Selecciona `Open` y elige la carpeta del proyecto.
-4. Espera a que Maven descargue dependencias.
-5. Configura JDK 25.
-6. Levanta Docker Compose.
-7. Ejecuta `ReactorOnlyPaymentApplication`.
