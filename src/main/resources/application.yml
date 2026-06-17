@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: reactor-only-payment-poc
+  main:
+    web-application-type: none
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/paymentsdb
+    username: payments
+    password: payments
+  sql:
+    init:
+      mode: never
+
+payment-processor:
+  batch-size: 5
+  concurrency: 3
+  limit-rate: 10
+  poll-interval-seconds: 10
+  max-retries: 3
+  auto-run-on-startup: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
