@@ -4,9 +4,9 @@ spring:
   main:
     web-application-type: none
   r2dbc:
-    url: r2dbc:postgresql://localhost:5432/paymentsdb
-    username: payments
-    password: payments
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:paymentsdb}
+    username: ${DB_USER:payments}
+    password: ${DB_PASSWORD:payments}
   sql:
     init:
       mode: never

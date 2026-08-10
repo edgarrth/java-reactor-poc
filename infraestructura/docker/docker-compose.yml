@@ -7,12 +7,14 @@ services:
       POSTGRES_USER: payments
       POSTGRES_PASSWORD: payments
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ../../datasets/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ../../datasets/seed-payments.sql:/docker-entrypoint-initdb.d/02-seed-payments.sql:ro
+      # docker-compose.yml lives in infraestructura/docker, so datasets is a sibling folder.
+      - ./datasets/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./datasets/seed-payments.sql:/docker-entrypoint-initdb.d/02-seed-payments.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U payments -d paymentsdb"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 5s

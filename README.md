@@ -32,12 +32,12 @@ También registra eventos en `payment_events` como `PAYMENT_AUTHORIZED` o `PAYME
 reactor-only-payment-poc/
 ├── infraestructura/
 │   └── docker/
-│       └── docker-compose.yml
-├── datasets/
-│   ├── schema.sql
-│   └── seed-payments.sql
-├── requests/
-│   └── reactor-cli.md
+│       ├── docker-compose.yml
+│       ├── datasets/
+│       │   ├── schema.sql
+│       │   └── seed-payments.sql
+│       └── requests/
+│           └── reactor-cli.md
 ├── src/main/java/com/edgarrt/reactoronlypayment/
 │   ├── domain/
 │   │   ├── model/
@@ -75,10 +75,16 @@ flowchart TD
 Arranca un flujo periódico usando `Flux.interval`. No hay WebFlux ni servidor HTTP.
 
 ```java
-Flux.interval(Duration.ZERO, Duration.ofSeconds(pollSeconds))
-  .concatMap(tick -> useCase.processPendingPayments().collectList())
+Scheduler pollingScheduler = Schedulers.newSingle("payment-poller", false);
+
+Flux.interval(Duration.ZERO, Duration.ofSeconds(pollSeconds), pollingScheduler)
+  .concatMap(tick -> useCase.processPendingPayments()
+    .collectList()
+    .onErrorResume(ex -> Mono.just(List.of())))
   .subscribe();
 ```
+
+Se usa un scheduler no-daemon para mantener vivo el proceso al tratarse de una aplicación Spring Boot sin servidor web. Un error de un tick se absorbe para que el siguiente ciclo de polling continúe.
 
 ### PaymentProcessorService
 
@@ -88,8 +94,13 @@ Demuestra operadores centrales de Reactor:
 repository.findPending(batchSize)
   .limitRate(limitRate)
   .flatMap(this::processOne, concurrency)
-  .onBackpressureBuffer(batchSize * 2)
+  .onBackpressureBuffer(batchSize * 2);
+
+policy.authorize(payment)
+  .flatMap(repository::save)
+  .flatMap(saved -> events.save(...).thenReturn(saved))
   .retryWhen(Retry.backoff(maxRetries, Duration.ofMillis(200)))
+  .onErrorResume(ex -> repository.save(...));
 ```
 
 ### PaymentAuthorizationPolicy
@@ -111,7 +122,15 @@ cd infraestructura/docker
 docker compose up -d
 ```
 
-Esto crea PostgreSQL y precarga datos desde la carpeta `datasets`.
+Esto crea PostgreSQL y precarga datos desde `infraestructura/docker/datasets`.
+
+## Ejecutar pruebas
+
+Desde la raíz del proyecto, con JDK 25:
+
+```bash
+mvn clean test
+```
 
 ## Ejecutar la aplicación
 
@@ -121,17 +140,45 @@ Desde la raíz del proyecto:
 mvn spring-boot:run
 ```
 
-La aplicación corre como worker y procesa pagos cada 10 segundos.
+La aplicación corre como worker y procesa pagos cada 10 segundos. La conexión R2DBC puede sobrescribirse con `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
 
-## Validar datos
+## Requests de prueba
+
+Esta PoC no expone HTTP, por lo que los requests de validación se ejecutan contra PostgreSQL desde CLI. Son el equivalente operativo a probar una API con `curl`.
+
+### Request 1: consultar pagos procesados
 
 ```bash
-docker exec -it reactor-only-payment-postgres psql -U payments -d paymentsdb -c "select id, amount, status, attempts, failure_reason from payments order by created_at;"
+docker exec -it reactor-only-payment-postgres \
+  psql -U payments -d paymentsdb \
+  -c "select id, amount, status, attempts, failure_reason from payments order by created_at;"
 ```
 
+Permite verificar que los registros pasaron de `PENDING` a `AUTHORIZED`, `REJECTED` o `FAILED`.
+
+### Request 2: consultar eventos generados
+
 ```bash
-docker exec -it reactor-only-payment-postgres psql -U payments -d paymentsdb -c "select payment_id, event_type, payload from payment_events order by created_at;"
+docker exec -it reactor-only-payment-postgres \
+  psql -U payments -d paymentsdb \
+  -c "select payment_id, event_type, payload, created_at from payment_events order by created_at;"
 ```
+
+Debe mostrar eventos como `PAYMENT_AUTHORIZED` y `PAYMENT_REJECTED`.
+
+> No se incluyen `curl` porque el proyecto es deliberadamente **Reactor Core sin WebFlux** y no levanta servidor HTTP.
+
+## Error `payment_events`: UPDATE sobre un evento nuevo
+
+Los eventos se crean en dominio con un UUID antes de persistirse. `ReactiveCrudRepository.save(...)` usa el estado de la entidad para decidir entre `INSERT` y `UPDATE`; con un `@Id` no nulo puede tratar el evento como existente.
+
+Como `payment_events` es append-only, el adapter usa explícitamente:
+
+```java
+template.insert(PaymentMapper.toRow(event))
+```
+
+Así cada evento nuevo se persiste con `INSERT` y no se intenta actualizar una fila inexistente.
 
 ## Diferencias frente a WebFlux + Reactor
 
